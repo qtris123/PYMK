@@ -1,0 +1,41 @@
+
+================================================================================
+OpenAlex Data Curation Pipeline
+================================================================================
+
+================================================================================
+STEP 2: Collecting Stable Concept IDs
+================================================================================
+
+Searching for concept: 'deep learning'
+  ✓ Found: Deep learning (Level 2, 708,578 works)
+
+Searching for concept: 'representation learning'
+
+Searching for concept: 'self-supervised learning'
+
+Searching for concept: 'metric learning'
+
+Searching for concept: 'optimization algorithms'
+  ✓ Found: Mathematical optimization (Level 1, 1,452,844 works)
+
+Searching for concept: 'attention (machine learning)'
+
+Searching for concept: 'convolutional neural networks'
+
+Searching for concept: 'transformer models'
+
+Searching for concept: 'computer vision'
+  ✓ Found: Computer vision (Level 1, 4,071,976 works)
+
+================================================================================
+Total stable concepts found: 3
+================================================================================
+
+Traceback (most recent call last):
+  File "/home/vo43/PYMK/OpenAlex/data_curation.py", line 553, in <module>
+    main()
+  File "/home/vo43/PYMK/OpenAlex/data_curation.py", line 520, in main
+    df_raw, df_filtered = retrieve_works_for_concepts(concepts, per_page=100, max_total_works=1000)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: retrieve_works_for_concepts() got an unexpected keyword argument 'max_total_works'

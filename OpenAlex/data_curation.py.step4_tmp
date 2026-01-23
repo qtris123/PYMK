@@ -1,0 +1,459 @@
+# ============================================================================
+# STEP 4: AUTHOR EXTRACTION AND NETWORK BUILDING
+# ============================================================================
+
+def extract_all_authors(df_works: pd.DataFrame) -> pd.DataFrame:
+    """
+    Step 4A: Extract all unique authors from works.
+    
+    Uniform weighting - no bias from citations, position, or recency.
+    
+    Args:
+        df_works: DataFrame of filtered works
+        
+    Returns:
+        DataFrame with columns: author_id, author_name, institution, work_ids, work_count
+    """
+    print("=" * 80)
+    print("STEP 4A: Extracting All Authors")
+    print("=" * 80)
+    
+    author_data = defaultdict(lambda: {
+        'author_name': None,
+        'institution': None,
+        'work_ids': [],
+        'concepts': []
+    })
+    
+    for _, row in df_works.iterrows():
+        authorships = row['authorships']
+        work_id = row['work_id']
+        concept_id = row['concept_id']
+        
+        if not isinstance(authorships, list):
+            continue
+            
+        for authorship in authorships:
+            author = authorship.get('author', {})
+            author_id = author.get('id')
+            
+            if not author_id:
+                continue
+            
+            # Store author metadata
+            if author_data[author_id]['author_name'] is None:
+                author_data[author_id]['author_name'] = author.get('display_name', 'Unknown')
+                
+                # Get institution (first one if multiple)
+                institutions = authorship.get('institutions', [])
+                if institutions:
+                    author_data[author_id]['institution'] = institutions[0].get('display_name', 'Unknown')
+            
+            # Track works and concepts
+            author_data[author_id]['work_ids'].append(work_id)
+            author_data[author_id]['concepts'].append(concept_id)
+    
+    # Convert to DataFrame
+    authors_list = []
+    for author_id, data in author_data.items():
+        authors_list.append({
+            'author_id': author_id,
+            'author_name': data['author_name'],
+            'institution': data['institution'],
+            'work_ids': data['work_ids'],
+            'work_count': len(data['work_ids']),
+            'concepts': data['concepts']
+        })
+    
+    authors_df = pd.DataFrame(authors_list)
+    
+    print(f"\nTotal unique authors extracted: {len(authors_df)}")
+    print(f"Average works per author: {authors_df['work_count'].mean():.2f}")
+    print(f"Median works per author: {authors_df['work_count'].median():.0f}")
+    print(f"{'=' * 80}\n")
+    
+    return authors_df
+
+
+def compute_author_topics(authors_df: pd.DataFrame, df_works: pd.DataFrame) -> pd.DataFrame:
+    """
+    Step 4B: Compute topic distribution and topical purity for each author.
+    
+    Topical purity = (works in our dataset) / (author's total works from OpenAlex)
+    
+    Args:
+        authors_df: DataFrame of authors
+        df_works: DataFrame of works for context
+        
+    Returns:
+        authors_df enriched with topic_distribution, topical_purity, dominant_topic, total_works_openalex
+    """
+    print("=" * 80)
+    print("STEP 4B: Computing Author Topic Distributions")
+    print("=" * 80)
+    
+    # Compute topic distributions from our dataset
+    topic_distributions = []
+    dominant_topics = []
+    
+    for _, author in authors_df.iterrows():
+        concepts = author['concepts']
+        
+        # Count works per concept
+        topic_dist = defaultdict(int)
+        for concept_id in concepts:
+            topic_dist[concept_id] += 1
+        
+        # Convert to percentage
+        total = sum(topic_dist.values())
+        topic_dist_pct = {k: v/total for k, v in topic_dist.items()}
+        
+        # Find dominant topic
+        dominant = max(topic_dist.items(), key=lambda x: x[1])[0] if topic_dist else None
+        
+        topic_distributions.append(dict(topic_dist))
+        dominant_topics.append(dominant)
+    
+    authors_df['topic_distribution'] = topic_distributions
+    authors_df['dominant_topic'] = dominant_topics
+    
+    # Fetch total works from OpenAlex API to compute topical purity
+    print(f"\nFetching total works count from OpenAlex for {len(authors_df)} authors...")
+    
+    total_works_list = []
+    topical_purity_list = []
+    
+    for i, row in authors_df.iterrows():
+        author_id = row['author_id']
+        works_in_dataset = row['work_count']
+        
+        try:
+            # Fetch author metadata from OpenAlex
+            response = requests.get(f"https://api.openalex.org/authors/{author_id}")
+            response.raise_for_status()
+            author_meta = response.json()
+            
+            total_works = author_meta.get('works_count', works_in_dataset)
+            topical_purity = works_in_dataset / total_works if total_works > 0 else 0.0
+            
+            total_works_list.append(total_works)
+            topical_purity_list.append(topical_purity)
+            
+            if (i + 1) % 50 == 0:
+                print(f"  Progress: {i+1}/{len(authors_df)} authors processed...")
+            
+            time.sleep(0.05)  # Rate limiting
+            
+        except Exception as e:
+            print(f"  ✗ Error fetching author {author_id}: {e}")
+            total_works_list.append(works_in_dataset)
+            topical_purity_list.append(1.0)  # Assume high purity if we can't fetch
+    
+    authors_df['total_works_openalex'] = total_works_list
+    authors_df['topical_purity'] = topical_purity_list
+    
+    print(f"\n{'=' * 80}")
+    print(f"Topic Distribution Statistics:")
+    print(f"  Mean topical purity: {authors_df['topical_purity'].mean():.3f}")
+    print(f"  Median topical purity: {authors_df['topical_purity'].median():.3f}")
+    print(f"  Authors with purity >= 0.5: {(authors_df['topical_purity'] >= 0.5).sum()}")
+    print(f"  Authors with purity >= 0.3: {(authors_df['topical_purity'] >= 0.3).sum()}")
+    print(f"{'=' * 80}\n")
+    
+    return authors_df
+
+
+def mark_author_anomalies(authors_df: pd.DataFrame, 
+                         high_productivity_threshold: int = 10000,
+                         high_degree_threshold: int = 200,
+                         low_purity_threshold: float = 0.3) -> pd.DataFrame:
+    """
+    Step 4C: Mark authors with anomalies (but keep all data).
+    
+    Args:
+        authors_df: DataFrame of authors
+        high_productivity_threshold: Mark authors with more than this many total works
+        high_degree_threshold: Mark authors with more than this many unique coauthors
+        low_purity_threshold: Mark authors below this topical purity
+        
+    Returns:
+        authors_df with boolean flags: is_high_productivity, is_low_purity
+    """
+    print("=" * 80)
+    print("STEP 4C: Marking Author Anomalies")
+    print("=" * 80)
+    
+    # Mark high productivity authors
+    authors_df['is_high_productivity'] = authors_df['total_works_openalex'] > high_productivity_threshold
+    
+    # Mark low purity authors
+    authors_df['is_low_purity'] = authors_df['topical_purity'] < low_purity_threshold
+    
+    print(f"\nAnomaly Statistics:")
+    print(f"  High productivity authors (>{high_productivity_threshold} works): {authors_df['is_high_productivity'].sum()}")
+    print(f"  Low purity authors (<{low_purity_threshold} purity): {authors_df['is_low_purity'].sum()}")
+    print(f"  Clean authors: {((~authors_df['is_high_productivity']) & (~authors_df['is_low_purity'])).sum()}")
+    print(f"\n{'=' * 80}\n")
+    
+    return authors_df
+
+
+def build_coauthor_edges(df_works: pd.DataFrame, 
+                        max_degree: int = 50) -> pd.DataFrame:
+    """
+    Step 4D: Build coauthor network from works (1-2 hops naturally).
+    
+    For each work, create edges between all author pairs (complete graph per paper).
+    Apply max_degree cap to prevent network explosion.
+    
+    Args:
+        df_works: DataFrame of works
+        max_degree: Maximum number of coauthors to keep per author
+        
+    Returns:
+        DataFrame with columns: author_id_1, author_id_2, weight, work_ids
+    """
+    print("=" * 80)
+    print("STEP 4D: Building Coauthor Network")
+    print("=" * 80)
+    
+    # Dictionary to store edges: (author1, author2) -> [work_ids]
+    edges = defaultdict(list)
+    
+    for _, row in df_works.iterrows():
+        authorships = row['authorships']
+        work_id = row['work_id']
+        
+        if not isinstance(authorships, list) or len(authorships) < 2:
+            continue
+        
+        # Extract all author IDs from this work
+        author_ids = []
+        for authorship in authorships:
+            author = authorship.get('author', {})
+            author_id = author.get('id')
+            if author_id:
+                author_ids.append(author_id)
+        
+        # Create edges between all pairs (undirected)
+        for i in range(len(author_ids)):
+            for j in range(i + 1, len(author_ids)):
+                a1, a2 = author_ids[i], author_ids[j]
+                # Ensure canonical ordering (smaller ID first)
+                edge = tuple(sorted([a1, a2]))
+                edges[edge].append(work_id)
+    
+    print(f"\nTotal coauthor edges (before capping): {len(edges)}")
+    
+    # Convert to DataFrame
+    edge_list = []
+    for (a1, a2), work_ids in edges.items():
+        edge_list.append({
+            'author_id_1': a1,
+            'author_id_2': a2,
+            'weight': len(work_ids),
+            'work_ids': work_ids
+        })
+    
+    edges_df = pd.DataFrame(edge_list)
+    
+    # Apply max_degree cap
+    if max_degree > 0:
+        print(f"Applying max_degree cap of {max_degree}...")
+        
+        # Count degree for each author
+        author_degrees = defaultdict(int)
+        for _, edge in edges_df.iterrows():
+            author_degrees[edge['author_id_1']] += 1
+            author_degrees[edge['author_id_2']] += 1
+        
+        # For authors exceeding max_degree, keep only top-weighted edges
+        filtered_edges = []
+        author_edge_counts = defaultdict(int)
+        
+        # Sort edges by weight (descending) to prioritize stronger collaborations
+        edges_df_sorted = edges_df.sort_values('weight', ascending=False)
+        
+        for _, edge in edges_df_sorted.iterrows():
+            a1, a2 = edge['author_id_1'], edge['author_id_2']
+            
+            # Check if adding this edge would exceed max_degree for either author
+            if (author_edge_counts[a1] < max_degree and 
+                author_edge_counts[a2] < max_degree):
+                filtered_edges.append(edge)
+                author_edge_counts[a1] += 1
+                author_edge_counts[a2] += 1
+        
+        edges_df = pd.DataFrame(filtered_edges)
+        print(f"Edges after max_degree capping: {len(edges_df)}")
+    
+    print(f"\n{'=' * 80}")
+    print(f"Coauthor Network Statistics:")
+    print(f"  Total edges: {len(edges_df)}")
+    print(f"  Mean edge weight: {edges_df['weight'].mean():.2f}")
+    print(f"  Max edge weight: {edges_df['weight'].max()}")
+    print(f"{'=' * 80}\n")
+    
+    return edges_df
+
+
+def build_citation_edges(df_works: pd.DataFrame, authors_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Step 4E: Build citation network from referenced_works (fast version).
+    
+    Creates author-level citation edges: if Work A (by Author X) cites Work B (by Author Y),
+    create edge X->Y.
+    
+    Args:
+        df_works: DataFrame of works
+        authors_df: DataFrame of authors for lookup
+        
+    Returns:
+        DataFrame with columns: citing_author_id, cited_author_id, weight, work_pairs
+    """
+    print("=" * 80)
+    print("STEP 4E: Building Citation Network")
+    print("=" * 80)
+    
+    # Create work_id -> author_ids mapping
+    work_to_authors = {}
+    for _, row in df_works.iterrows():
+        work_id = row['work_id']
+        authorships = row['authorships']
+        
+        if isinstance(authorships, list):
+            author_ids = [a.get('author', {}).get('id') for a in authorships]
+            author_ids = [aid for aid in author_ids if aid]
+            work_to_authors[work_id] = author_ids
+    
+    # Build citation edges
+    citation_edges = defaultdict(lambda: {'weight': 0, 'work_pairs': []})
+    
+    for _, row in df_works.iterrows():
+        citing_work = row['work_id']
+        citing_authors = work_to_authors.get(citing_work, [])
+        
+        # Get referenced works (Note: may need to fetch this from API if not in payload)
+        # For now, assuming it's in the open_access or we need to fetch it
+        # Let's fetch it per work
+        try:
+            response = requests.get(f"https://api.openalex.org/works/{citing_work}")
+            response.raise_for_status()
+            work_data = response.json()
+            
+            referenced_works = work_data.get('referenced_works', [])
+            
+            # For each referenced work in our dataset, create citation edges
+            for cited_work in referenced_works:
+                if cited_work in work_to_authors:
+                    cited_authors = work_to_authors[cited_work]
+                    
+                    # Create edges from each citing author to each cited author
+                    for citing_author in citing_authors:
+                        for cited_author in cited_authors:
+                            if citing_author != cited_author:  # No self-citations
+                                edge_key = (citing_author, cited_author)
+                                citation_edges[edge_key]['weight'] += 1
+                                citation_edges[edge_key]['work_pairs'].append((citing_work, cited_work))
+            
+            time.sleep(0.05)  # Rate limiting
+            
+        except Exception as e:
+            # Skip if we can't fetch
+            continue
+    
+    # Convert to DataFrame
+    edge_list = []
+    for (citing_author, cited_author), data in citation_edges.items():
+        edge_list.append({
+            'citing_author_id': citing_author,
+            'cited_author_id': cited_author,
+            'weight': data['weight'],
+            'work_pairs': data['work_pairs']
+        })
+    
+    citation_edges_df = pd.DataFrame(edge_list)
+    
+    print(f"\n{'=' * 80}")
+    print(f"Citation Network Statistics:")
+    print(f"  Total citation edges: {len(citation_edges_df)}")
+    if len(citation_edges_df) > 0:
+        print(f"  Mean edge weight: {citation_edges_df['weight'].mean():.2f}")
+        print(f"  Max edge weight: {citation_edges_df['weight'].max()}")
+    print(f"{'=' * 80}\n")
+    
+    return citation_edges_df
+
+
+def evaluate_author_network(authors_df: pd.DataFrame, 
+                           coauthor_edges_df: pd.DataFrame,
+                           citation_edges_df: pd.DataFrame):
+    """
+    Step 4F: Evaluate and report statistics on the author network.
+    
+    Args:
+        authors_df: DataFrame of authors
+        coauthor_edges_df: DataFrame of coauthor edges
+        citation_edges_df: DataFrame of citation edges
+    """
+    print("=" * 80)
+    print("STEP 4F: AUTHOR NETWORK EVALUATION")
+    print("=" * 80)
+    
+    print(f"\n--- AUTHOR STATISTICS ---")
+    print(f"Total unique authors: {len(authors_df)}")
+    print(f"Mean works per author (in dataset): {authors_df['work_count'].mean():.2f}")
+    print(f"Mean total works (OpenAlex): {authors_df['total_works_openalex'].mean():.1f}")
+    print(f"Mean topical purity: {authors_df['topical_purity'].mean():.3f}")
+    
+    print(f"\n--- ANOMALY FLAGS ---")
+    print(f"High productivity authors: {authors_df['is_high_productivity'].sum()} ({100*authors_df['is_high_productivity'].mean():.1f}%)")
+    print(f"Low purity authors: {authors_df['is_low_purity'].sum()} ({100*authors_df['is_low_purity'].mean():.1f}%)")
+    
+    print(f"\n--- COAUTHOR NETWORK ---")
+    print(f"Total edges: {len(coauthor_edges_df)}")
+    if len(coauthor_edges_df) > 0:
+        # Compute degree distribution
+        author_degrees = defaultdict(int)
+        for _, edge in coauthor_edges_df.iterrows():
+            author_degrees[edge['author_id_1']] += 1
+            author_degrees[edge['author_id_2']] += 1
+        
+        degrees = list(author_degrees.values())
+        print(f"Mean degree: {sum(degrees) / len(degrees):.2f}")
+        print(f"Max degree: {max(degrees)}")
+        print(f"Authors with >0 coauthors: {len(author_degrees)}")
+    
+    print(f"\n--- CITATION NETWORK ---")
+    print(f"Total edges: {len(citation_edges_df)}")
+    if len(citation_edges_df) > 0:
+        # Compute in/out degree
+        out_degrees = defaultdict(int)
+        in_degrees = defaultdict(int)
+        for _, edge in citation_edges_df.iterrows():
+            out_degrees[edge['citing_author_id']] += 1
+            in_degrees[edge['cited_author_id']] += 1
+        
+        print(f"Mean out-degree: {sum(out_degrees.values()) / len(out_degrees):.2f}")
+        print(f"Mean in-degree: {sum(in_degrees.values()) / len(in_degrees):.2f}")
+    
+    print(f"\n--- COMBINED NETWORK ---")
+    # Get all unique authors in either network
+    coauthor_authors = set()
+    if len(coauthor_edges_df) > 0:
+        coauthor_authors.update(coauthor_edges_df['author_id_1'])
+        coauthor_authors.update(coauthor_edges_df['author_id_2'])
+    
+    citation_authors = set()
+    if len(citation_edges_df) > 0:
+        citation_authors.update(citation_edges_df['citing_author_id'])
+        citation_authors.update(citation_edges_df['cited_author_id'])
+    
+    all_network_authors = coauthor_authors.union(citation_authors)
+    total_edges = len(coauthor_edges_df) + len(citation_edges_df)
+    
+    print(f"Total authors in networks: {len(all_network_authors)}")
+    print(f"Total edges (coauthor + citation): {total_edges}")
+    print(f"Network density: {2 * total_edges / (len(all_network_authors) * (len(all_network_authors) - 1)) if len(all_network_authors) > 1 else 0:.6f}")
+    
+    print(f"\n{'=' * 80}\n")
