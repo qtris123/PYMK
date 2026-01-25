@@ -521,15 +521,19 @@ def main():
     if not concepts:
         print("⚠ No concepts found")
         return
-    
-    df_raw, df_filtered = retrieve_works_for_concepts(concepts, per_page=100)
-    
-    raw_out = "/home/vo43/PYMK/OpenAlex/collected_works_raw.parquet"
-    filt_out = "/home/vo43/PYMK/OpenAlex/collected_works_filtered.parquet"
-    df_raw.to_parquet(raw_out, index=False)
-    df_filtered.to_parquet(filt_out, index=False)
-    print(f"\n✓ Saved: {raw_out} ({df_raw.shape[0]} works)")
-    print(f"✓ Saved: {filt_out} ({df_filtered.shape[0]} works)\n")
+    if open("/home/vo43/PYMK/OpenAlex/collected_works_raw.parquet"):
+        df_raw = pd.read_parquet("/home/vo43/PYMK/OpenAlex/collected_works_raw.parquet")
+        df_filtered = pd.read_parquet("/home/vo43/PYMK/OpenAlex/collected_works_filtered.parquet")
+        print(f"\n✓ Loaded: /collected_works_raw.parquet ({df_raw.shape[0]} works)")
+        print(f"✓ Loaded: /collected_works_filtered.parquet ({df_filtered.shape[0]} works)\n")
+    else:
+        df_raw, df_filtered = retrieve_works_for_concepts(concepts, per_page=100)
+        raw_out = "/home/vo43/PYMK/OpenAlex/collected_works_raw.parquet"
+        filt_out = "/home/vo43/PYMK/OpenAlex/collected_works_filtered.parquet"
+        df_raw.to_parquet(raw_out, index=False)
+        df_filtered.to_parquet(filt_out, index=False)
+        print(f"\n✓ Saved: {raw_out} ({df_raw.shape[0]} works)")
+        print(f"✓ Saved: {filt_out} ({df_filtered.shape[0]} works)\n")
     
     if df_raw.empty:
         return
@@ -538,11 +542,11 @@ def main():
     print("STEP 4: AUTHOR NETWORK")
     print("=" * 80 + "\n")
     
-    authors_df = extract_all_authors(df_raw)
-    authors_df = compute_author_topics(authors_df, df_raw)
+    authors_df = extract_all_authors(df_filtered)
+    authors_df = compute_author_topics(authors_df, df_filtered)
     authors_df = mark_author_anomalies(authors_df)
-    coauthor_edges = build_coauthor_edges(df_raw, max_degree=50)
-    citation_edges = build_citation_edges(df_raw, authors_df)
+    coauthor_edges = build_coauthor_edges(df_filtered, max_degree=50)
+    citation_edges = build_citation_edges(df_filtered, authors_df)
     
     authors_df.to_parquet("/home/vo43/PYMK/OpenAlex/authors.parquet", index=False)
     coauthor_edges.to_parquet("/home/vo43/PYMK/OpenAlex/coauthor_edges.parquet", index=False)

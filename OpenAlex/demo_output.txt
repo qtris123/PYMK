@@ -1,0 +1,95 @@
+Loaded 903 authors
+Train graph has 740 nodes
+Test graph has 870 nodes
+Demo mode: Using random user https://openalex.org/A5100748135
+
+
+================================================================================
+CANDIDATE RECOMMENDATIONS FOR USER: https://openalex.org/A5100748135
+================================================================================
+
+User: Yu Qiao
+Institution: Shenzhen Institutes of Advanced Technology
+Dominant Topic: https://openalex.org/C108583219
+Work Count: 3
+
+Top 100 Candidates (ranked by common neighbors):
+--------------------------------------------------------------------------------
+Rank   Hop    Common     Name                           Topic               
+--------------------------------------------------------------------------------
+1      2      1          Zhirong Wu                     https://openalex.o  
+2      2      1          Ziwei Liu                      https://openalex.o  
+3      2      1          Chen Change Loy                https://openalex.o  
+4      2      1          John Winn                      https://openalex.o  
+5      2      1          Herbert Bay                    https://openalex.o  
+6      2      1          Andrew Zisserman               https://openalex.o  
+7      2      1          Aditya Khosla                  https://openalex.o  
+8      2      1          Andreas Ess                    https://openalex.o  
+9      2      1          Chao Dong                      https://openalex.o  
+10     2      1          Jianxiong Xiao                 https://openalex.o  
+11     2      1          Tinne Tuytelaars               https://openalex.o  
+12     2      1          Shuran Song                    https://openalex.o  
+13     2      1          Christopher K. I. Williams     https://openalex.o  
+14     2      1          Xiaogang Wang                  https://openalex.o  
+15     2      1          Mark Everingham                https://openalex.o  
+16     2      1          Fisher Yu                      https://openalex.o  
+17     2      1          Ping Luo                       https://openalex.o  
+18     2      1          Kaiming He                     https://openalex.o  
+19     2      1          Linguang Zhang                 https://openalex.o  
+20     3      0          Shaoqing Ren                   https://openalex.o  
+21     3      0          Àgata Lapedriza                https://openalex.o  
+22     3      0          Jia Deng                       https://openalex.o  
+23     3      0          Jianping Shi                   https://openalex.o  
+24     3      0          Jiaya Jia                      https://openalex.o  
+25     3      0          Michael S. Bernstein           https://openalex.o  
+26     3      0          Hengshuang Zhao                https://openalex.o  
+27     3      0          Jian Sun                       https://openalex.o  
+28     3      0          Sanjeev Satheesh               https://openalex.o  
+29     3      0          Andrej Karpathy                https://openalex.o  
+30     3      0          Hao Su                         https://openalex.o  
+31     3      0          Sean Ma                        https://openalex.o  
+32     3      0          Aude Oliva                     https://openalex.o  
+33     3      0          Jonathan Krause                https://openalex.o  
+34     3      0          Georgia Gkioxari               https://openalex.o  
+35     3      0          Xiangyu Zhang                  https://openalex.o  
+36     3      0          Piotr Dollár                   https://openalex.o  
+37     3      0          Omkar Parkhi                   https://openalex.o  
+38     3      0          Olga Russakovsky               https://openalex.o  
+39     3      0          Richard Hartley                https://openalex.o  
+40     3      0          Ross Girshick                  https://openalex.o  
+41     3      0          Xiaojuan Qi                    https://openalex.o  
+42     3      0          Li Fei-Fei                     https://openalex.o  
+43     3      0          Tsung-Yi Lin                   https://openalex.o  
+44     3      0          Alexander C. Berg              https://openalex.o  
+45     3      0          Zhiheng Huang                  https://openalex.o  
+46     3      0          Priya Goyal                    https://openalex.o  
+47     3      0          Andrea Vedaldi                 https://openalex.o  
+48     3      0          Jian Sun                       https://openalex.o  
+49     3      0          Bolei Zhou                     https://openalex.o  
+50     3      0          Antonio Torralba               https://openalex.o  
+51     3      0          Jian Sun                       https://openalex.o  
+--------------------------------------------------------------------------------
+
+Evaluation (against test set):
+  Total candidates recommended: 51
+  Actual new collaborators in test: 7
+  Hits (correct predictions): 2
+  Hit rate: 3.92%
+  Recall: 28.57%
+
+  Sample correct predictions:
+    - Chen Change Loy (https://openalex.org/C108583219)
+    - Chao Dong (https://openalex.org/C108583219)
+
+================================================================================
+
+
+Candidate Distribution by Hop:
+  2-hop: 19 candidates
+  3-hop: 32 candidates
+
+Common Neighbor Statistics:
+  Min: 0
+  Max: 1
+  Mean: 0.37
+  Median: 0
