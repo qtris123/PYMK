@@ -1,0 +1,1 @@
+Structure according to cookiecutter-data-science and rafaelgreca/e2e-mlops-project repos.
