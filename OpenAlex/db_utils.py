@@ -239,19 +239,70 @@ def upsert_temporal_features(con, rows: List[dict]):
 # Edges
 # ---------------------------------------------------------------------------
 
-def upsert_coauthor_edges(con, rows: List[dict]):
-    if not rows:
-        return
-    con.executemany(
-        "INSERT OR REPLACE INTO coauthor_edges VALUES (?,?,?)",
-        [(r["author_id_1"], r["author_id_2"], r["weight"]) for r in rows],
-    )
+def compute_and_upsert_coauthor_edges(con, max_degree: int = 50):
+    """
+    Computes coauthor weights and applies a degree cap using SQL.
+    This is significantly faster than Python-side loops.
+    """
+    # 1. Clear old edges (optional depending on upsert needs,
+    # but for a "recompute all" stage it's cleaner)
+    con.execute("DELETE FROM coauthor_edges")
+
+    # 2. Compute weights and insert top edges per author
+    # Note: We use a window function to implement a degree cap similar
+    # to the Python logic (top N neighbors by weight).
+    con.execute(f"""
+        INSERT INTO coauthor_edges
+        WITH pairs AS (
+            SELECT
+                LEAST(a1.author_id, a2.author_id)    AS aid1,
+                GREATEST(a1.author_id, a2.author_id)  AS aid2
+            FROM author_works a1
+            JOIN author_works a2
+              ON a1.work_id = a2.work_id AND a1.author_id < a2.author_id
+        ),
+        weighted AS (
+            SELECT aid1, aid2, COUNT(*) AS weight
+            FROM pairs
+            GROUP BY 1, 2
+        ),
+        ranked AS (
+            SELECT aid1, aid2, weight,
+                   row_number() OVER (PARTITION BY aid1 ORDER BY weight DESC) as r1,
+                   row_number() OVER (PARTITION BY aid2 ORDER BY weight DESC) as r2
+            FROM weighted
+        )
+        SELECT aid1, aid2, weight
+        FROM ranked
+        WHERE r1 <= {max_degree} AND r2 <= {max_degree}
+    """)
 
 
-def upsert_citation_edges(con, rows: List[dict]):
-    if not rows:
-        return
-    con.executemany(
-        "INSERT OR REPLACE INTO citation_edges VALUES (?,?,?)",
-        [(r["citing_author_id"], r["cited_author_id"], r["weight"]) for r in rows],
-    )
+def compute_and_upsert_citation_edges(con):
+    """
+    Computes citation weights between authors using SQL.
+    Unnests JSON referenced_works and joins back to author_works.
+    """
+    con.execute("DELETE FROM citation_edges")
+
+    con.execute("""
+        INSERT INTO citation_edges
+        WITH refs AS (
+            SELECT
+                aw.author_id as citing_aid,
+                unnest(cast(json_extract(w.referenced_works, '$[*]') as TEXT[])) as cited_wid
+            FROM works w
+            JOIN author_works aw ON w.work_id = aw.work_id
+        ),
+        edges AS (
+            SELECT
+                r.citing_aid,
+                aw_cited.author_id as cited_aid
+            FROM refs r
+            JOIN author_works aw_cited ON r.cited_wid = aw_cited.work_id
+            WHERE r.citing_aid != aw_cited.author_id
+        )
+        SELECT citing_aid, cited_aid, COUNT(*) as weight
+        FROM edges
+        GROUP BY 1, 2
+    """)

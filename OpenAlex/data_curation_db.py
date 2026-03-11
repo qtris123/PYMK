@@ -29,7 +29,7 @@ from db_utils import (
     upsert_authors_stub, upsert_author_works,
     get_unenriched_author_ids, update_author_enrichment,
     upsert_temporal_features,
-    upsert_coauthor_edges, upsert_citation_edges,
+    compute_and_upsert_coauthor_edges, compute_and_upsert_citation_edges,
 )
 
 # ---------------------------------------------------------------------------
@@ -271,82 +271,30 @@ def build_temporal_features(con: duckdb.DuckDBPyConnection):
     print(f"  {len(feature_rows)} rows for {len(rows)} authors\n")
 
 
-# ---------------------------------------------------------------------------
-# Step 5: Build coauthor edges
-# ---------------------------------------------------------------------------
+# # ---------------------------------------------------------------------------
+# # Step 5: Build coauthor edges
+# # ---------------------------------------------------------------------------
 
-def build_coauthor_edges(con: duckdb.DuckDBPyConnection, max_degree: int = 50):
-    print("=" * 60)
-    print("STEP 5: Building Coauthor Edges")
-    print("=" * 60)
-
-    works_rows = con.execute("SELECT authorships FROM works").fetchall()
-    edge_counts = defaultdict(int)
-
-    for (authorships_raw,) in works_rows:
-        authorships = _parse_json(authorships_raw)
-        ids = [
-            a["author"]["id"] for a in authorships
-            if (a.get("author") or {}).get("id")
-        ]
-        for i in range(len(ids)):
-            for j in range(i + 1, len(ids)):
-                edge_counts[tuple(sorted([ids[i], ids[j]]))] += 1
-
-    # Apply degree cap (keep highest-weight edges first)
-    degree = defaultdict(int)
-    rows = []
-    for (a1, a2), w in sorted(edge_counts.items(), key=lambda x: -x[1]):
-        if degree[a1] < max_degree and degree[a2] < max_degree:
-            rows.append({"author_id_1": a1, "author_id_2": a2, "weight": w})
-            degree[a1] += 1
-            degree[a2] += 1
-
-    upsert_coauthor_edges(con, rows)
-    print(f"  {len(rows)} coauthor edges\n")
+# def build_coauthor_edges(con: duckdb.DuckDBPyConnection, max_degree: int = 50):
+#     print("=" * 60)
+#     print("STEP 5: Building Coauthor Edges (SQL Optimized)")
+#     print("=" * 60)
+#     compute_and_upsert_coauthor_edges(con, max_degree)
+#     count = con.execute("SELECT COUNT(*) FROM coauthor_edges").fetchone()[0]
+#     print(f"  {count} coauthor edges computed.\n")
 
 
-# ---------------------------------------------------------------------------
-# Step 6: Build citation edges
-# ---------------------------------------------------------------------------
+# # ---------------------------------------------------------------------------
+# # Step 6: Build citation edges
+# # ---------------------------------------------------------------------------
 
-def build_citation_edges(con: duckdb.DuckDBPyConnection):
-    print("=" * 60)
-    print("STEP 6: Building Citation Edges")
-    print("=" * 60)
-
-    works_rows = con.execute(
-        "SELECT work_id, authorships, referenced_works FROM works"
-    ).fetchall()
-
-    work_to_authors = {}
-    for work_id, authorships_raw, _ in works_rows:
-        authorships = _parse_json(authorships_raw)
-        work_to_authors[work_id] = [
-            a["author"]["id"] for a in authorships
-            if (a.get("author") or {}).get("id")
-        ]
-
-    work_id_set = set(work_to_authors)
-    edge_counts = defaultdict(int)
-
-    for work_id, _, refs_raw in works_rows:
-        refs = _parse_json(refs_raw)
-        citing_authors = work_to_authors.get(work_id, [])
-        for cited_work in refs:
-            if cited_work not in work_id_set:
-                continue
-            for ca in citing_authors:
-                for cd in work_to_authors.get(cited_work, []):
-                    if ca != cd:
-                        edge_counts[(ca, cd)] += 1
-
-    rows = [
-        {"citing_author_id": ca, "cited_author_id": cd, "weight": w}
-        for (ca, cd), w in edge_counts.items()
-    ]
-    upsert_citation_edges(con, rows)
-    print(f"  {len(rows)} citation edges\n")
+# def build_citation_edges(con: duckdb.DuckDBPyConnection):
+#     print("=" * 60)
+#     print("STEP 6: Building Citation Edges (SQL Optimized)")
+#     print("=" * 60)
+#     compute_and_upsert_citation_edges(con)
+#     count = con.execute("SELECT COUNT(*) FROM citation_edges").fetchone()[0]
+#     print(f"  {count} citation edges computed.\n")
 
 
 # ---------------------------------------------------------------------------
@@ -378,8 +326,8 @@ def main():
     extract_authors(con)
     fetch_author_objects(con)
     build_temporal_features(con)
-    build_coauthor_edges(con)
-    build_citation_edges(con)
+    # build_coauthor_edges(con) # consider report node March 11th
+    # build_citation_edges(con)
 
     print("=" * 60)
     print("PIPELINE COMPLETE")
