@@ -1,0 +1,14 @@
+artifact_uri: mlflow-artifacts:/244323155794726017/905c5251b4bd4267bf734fa2e9875d71/artifacts
+end_time: 1769648897091
+entry_point_name: ''
+experiment_id: '244323155794726017'
+lifecycle_stage: active
+run_id: 905c5251b4bd4267bf734fa2e9875d71
+run_name: placid-colt-51
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1769648894743
+status: 3
+tags: []
+user_id: vo43
